@@ -5,12 +5,12 @@ clear; close all; clc;
 % Small Sample Support. Dissertação de Mestrado, Instituto Militar de
 % Engenharia, 2022.
 %--------------------------------------------------------------------------
-montecarlo=100;                    % Number of trials
+montecarlo=3;                    % Number of trials
 %--------------------------------
-mu=0.9;                          % Factor for leankage minimization (0<mu<1)
+mu=0.8;                          % Factor for leankage minimization (0<mu<1)
                                  % Reduce mu factor when reducing sample support
 %--------------------------------
-SIRdB=0;                         % 10*log10(sigmaS1/sigmaS2)
+SIRdB=-3;                         % 10*log10(sigmaS1/sigmaS2)
 %--------------------------------
 SNRdB=-30;                       % 10*log10(sigmaS1/sigman2)
 %--------------------------------
@@ -18,7 +18,7 @@ SampleSupport=100;               % Ensemble for batch processing
 %--------------------------------
 % signal parameters (for every trial)
 %--------------------------------
-fs = 8e7;                        % Sampling frequency
+fs = 16e7;                        % Sampling frequency
 fo= 12.5e6;                      % Array operating frequency and SoI
 f1= 15e6;                        % Interferer central frequency
 dt = 1/fs;
@@ -28,12 +28,12 @@ t = (0:dt:duration-dt)';
 % Bandpass Narrowband filters for signal sources
 %--------------------------------
 wpass1=[0.95*fo  1.05*fo];
-wpass2=[0.80*f1  1.20*f1];
+wpass2=[0.90*f1  1.10*f1];
 %--------------------------------
 % Array parameters
 %--------------------------------
-M=200;                           % Number of sensors in the array
-N=10;                            % Phase Mode index
+M=25;                           % Number of sensors in the array
+N=7;                            % Phase Mode index
 MODES=2*N+1;                     % Number os Phase Modes (spatial harmonics)
 %--------------------------------
 % Propagation velocity
@@ -62,7 +62,7 @@ teta=deg2rad(tetadeg);
 phisim1=37.9;                    % AZIMUTH 1
 phisim1=deg2rad(phisim1);
 % tetasim1=90;                   % Used only for acessing anisotropic behavior
-tetasim1=29.7;                   % ZENITH 1
+tetasim1=19.7;                   % ZENITH 1
 tetasim1=deg2rad(tetasim1);
 %--------------------------------
 % Interference source DoA
@@ -86,12 +86,12 @@ plotze2=zeros(1,montecarlo);
 %--------------------------------
 for y=1:montecarlo
     %--------------------------------
-    % S1 = cos(2*pi*fo*t+pi/2*(rand));
+    S1 = cos(2*pi*fo*t)+1i*sin(2*pi*fo*t);
     % S1 = rand(duration*fs,1);
-    S1 = rand(duration*fs,1)+1i*rand(duration*fs,1);
-    S1 = bandpass(S1,wpass1,fs);
+    % S1 = rand(duration*fs,1)+1i*rand(duration*fs,1);
+    % S1 = bandpass(S1,wpass1,fs);
     S1=S1-mean(S1); S1=S1/std(S1);
-    % S2 = cos(2*pi*fo1*t+pi/2*(rand));
+    % S2 = cos(2*pi*f1*t+(pi/2)*(rand))+1i*sin(2*pi*f1*t+(pi/2)*(rand));
     % S2 = rand(duration*fs,1);
     S2 = rand(duration*fs,1)+1i*rand(duration*fs,1);
     S2 = bandpass(S2,wpass2,fs);
@@ -103,8 +103,6 @@ for y=1:montecarlo
     %--------------------------------
     sigmax2=var(S1);
     sigman2=sigmax2*10^(-SNRdB/10);
-    noise=randn(M,1)+1*randn(M,1);
-    noise=noise-mean(noise); noise=sqrt(sigman2)*noise/std(noise);
     %--------------------------------
     % Reference signals in the center of the array
     %--------------------------------
@@ -144,16 +142,13 @@ for y=1:montecarlo
     J=diag(j);
     %--------------------------------------------------------------------------
     %--------------------------------------------------------------------------
-    % SMALL SAMPLE SUPPORT - TOEPLITZ CONDITIONING AND FBA
+    % TOEPLITZ CONDITIONING AND FBA
     %--------------------------------------------------------------------------
     %--------------------------------------------------------------------------
     % Sample Covariance Matrices
     %--------------------------------
     Rcorr=zeros(M,M);
-    RcorrPHASEToep=zeros(MODES,MODES);
     RcorrPHASE=zeros(MODES,MODES);
-    RcorrPHASEToepup=zeros(MODES,MODES);
-
     for k=1:SampleSupport
         %--------------------------------
         % Input AWGN dos sensores
@@ -173,37 +168,37 @@ for y=1:montecarlo
         % TOEPLITZ CONDIDIONING - Sensor Output in BEAMSPACE with
         % azimuth parameter only (Vandermonde structure)
         %--------------------------------
-        snapshotPHASEToep=J*snapshotPHASE;
+        snapshotPHASE=J*snapshotPHASE;
         %--------------------------------
         Rcorr=Rcorr+snapshot*snapshot';
         RcorrPHASE=RcorrPHASE+snapshotPHASE*snapshotPHASE';
-        RcorrPHASEToep=RcorrPHASEToep+snapshotPHASEToep*snapshotPHASEToep';
     end
     %----------------------------------
     % Element Space and Beamspace Spatial Covariance Matrices
     %----------------------------------
     Rcorr=Rcorr/SampleSupport;
     RcorrPHASE=RcorrPHASE/SampleSupport;
-    RcorrPHASEToep=RcorrPHASEToep/SampleSupport;
     %--------------------------------
     % Diagonal Loading
     %--------------------------------
     Rcorr=Rcorr+1*(eye(M));
     RcorrPHASE=RcorrPHASE+1*(eye(MODES));
-    RcorrPHASEToep=RcorrPHASEToep+1*(eye(MODES));
     %--------------------------------
     % Forward-Backward Avereging (FBA)
     %--------------------------------
     Rcorr=(Rcorr+(flip(eye(M))*(conj(Rcorr))*flip(eye(M))))/2;
     RcorrPHASE=(RcorrPHASE+(flip(eye(MODES))*(conj(RcorrPHASE))*flip(eye(MODES))))/2;
-    RcorrPHASEToep=(RcorrPHASEToep+(flip(eye(MODES))*(conj(RcorrPHASEToep))*flip(eye(MODES))))/2;
+    %--------------------------------
+    % PREWHITENING
+    %--------------------------------
+
     %--------------------------------------------------------------------------
     %--------------------------------------------------------------------------
     % 2-D DoA in 2 Phases: Root-MUSIC for Azimuth and Angular Scan Method
     % (Element-space Spectral MUSIC) for Zenith
     %--------------------------------------------------------------------------
     %--------------------------------------------------------------------------
-    [EPHASE,LPHASE]=eig(RcorrPHASEToep);
+    [EPHASE,LPHASE]=eig(RcorrPHASE);
     [val,pos] = sort(diag(LPHASE),'descend');
     LPHASE=diag(val);
     EPHASE(:,:)=EPHASE(:,pos);
@@ -258,24 +253,29 @@ for y=1:montecarlo
         aini2(m,1)=exp(1i*(KR)*sin(zenini)*cos(-(2*pi*(m-1)/M)+deg2rad(DOAini2)));
     end
     Aini = [aini1 aini2];    % Array Manifold with Initial DoAs
+    plotazini1(y)=DOAini1;
+    plotazini2(y)=DOAini2;
     %--------------------------------
-    P = Aini*inv(Aini'*Aini)*(Aini'); % Projector matrix P element-space
+    P = Aini*pinv(Aini'*Aini)*(Aini'); % Projector matrix P element-space
     W=F.';
-    PPHASE = W'*Aini*inv(Aini'*(W)*(W')*Aini)*(Aini'*W); % Projector matrix P beamspace
+    PPHASE = W'*Aini*pinv(Aini'*(W)*(W')*Aini)*(Aini'*W); % Projector matrix P beamspace
     %--------------------------------
     Tx = P*Rcorr*(eye(M)-P);       % Leakage Minimization in element-space
     TxPHASE = PPHASE*RcorrPHASE*(eye(MODES)-PPHASE);
-    TxPHASEToep = PPHASE*RcorrPHASEToep*(eye(MODES)-PPHASE);
     %--------------------------------
     % Updated Sample Covariance Matrix with LEAKAGE MINIMIZATION
     %--------------------------------
     Rcorrup = Rcorr-mu*(Tx + Tx');                      % Element Space
     RcorrPHASEup = RcorrPHASE-mu*(TxPHASE + TxPHASE');  % BEAMSPACE
-    RcorrPHASEToepup = RcorrPHASEToep-mu*(TxPHASEToep + TxPHASEToep');  % BEAMSPACE azimuth only
+    %--------------------------------
+    % Forward-Backward Avereging (FBA)
+    %--------------------------------
+    Rcorrup=(Rcorrup+(flip(eye(M))*(conj(Rcorrup))*flip(eye(M))))/2;
+    RcorrPHASEup=(RcorrPHASEup+(flip(eye(MODES))*(conj(RcorrPHASEup))*flip(eye(MODES))))/2;
     %--------------------------------
     % Subspaces in BEAMSPACE after LEAKAGE MINIMIZATION (up)
     %----------------------------------------------------------------
-    [EPHASEup,LPHASEup]=eig(RcorrPHASEToepup);
+    [EPHASEup,LPHASEup]=eig(RcorrPHASEup);
     [val,pos] = sort(diag(LPHASEup),'descend');
     LPHASEup=diag(val);
     EPHASEup(:,:)=EPHASEup(:,pos);
@@ -315,7 +315,6 @@ for y=1:montecarlo
     % ------------------------------------
     E1=abs(DOAaz1A-rad2deg(phisim1));
     E1A=abs(DOAaz2A-rad2deg(phisim1));
-
     if E1<E1A
         DOAaz1=DOAaz1A;
         DOAaz2=DOAaz2A;
@@ -381,6 +380,8 @@ for y=1:montecarlo
     %--------------------------------------------------------------------------
     %--------------------------------------------------------------------------
     % BEAMSPACE MVDR Beamformer for 2-D DoA
+    % 
+    % Use BEAMSPACE Root-MUSIC and ELEMENT SPACE Spectral MUSIC to construct the MVDR Beamformer
     %--------------------------------------------------------------------------
     %--------------------------------------------------------------------------
     % PMVDRPHASE=zeros(length(phi),length(teta));
@@ -393,7 +394,7 @@ for y=1:montecarlo
     % 
     %         end
     % 
-    %         PMVDRPHASE(contphi,contteta)=1/(aMVDRPHASE'*inv(RcorrPHASEup)*aMVDRPHASE);
+    %         PMVDRPHASE(contphi,contteta)=1/(aMVDRPHASE'*pinv(RcorrPHASEup)*aMVDRPHASE);
     % 
     %     end
     % end
@@ -410,15 +411,17 @@ for y=1:montecarlo
     %         for m=1:M
     %             aMVDR(m,1)=[exp(1i*(KR)*sin(teta(contteta))*cos(-(2*pi*(m-1)/M)+phi(contphi)))];
     %         end
-    %         PMVDR(contphi,contteta)=1/(aMVDR'*inv(Rcorrup)*aMVDR);
+    %         PMVDR(contphi,contteta)=1/(aMVDR'*pinv(Rcorrup)*aMVDR);
     % 
     %     end
     % end
     % PMVDR(:,:)=abs(PMVDR(:,:))/max(max(abs(PMVDR)));
 end
 %--------------------------------
-% Métricas dos resultados
+% Results metrics
 %--------------------------------
+meanazini1=mean(plotazini1);
+meanazini2=mean(plotazini2);
 meanaz1=mean(plotaz1);
 %stdaz1=std(plotaz1);
 meanze1=mean(plotze1);
@@ -430,6 +433,8 @@ meanze2=mean(plotze2);
 %--------------------------------
 % Consolidated RMSE from all montecarlo trials 
 %--------------------------------
+E1AZini=abs(rad2deg(phisim1)-meanazini1)  % Initial Error-Azimuth-SoI
+E2AZini=abs(rad2deg(phisim2)-meanazini2)  % Initial Error-Azimuth-Interferer
 E1AZ=abs(rad2deg(phisim1)-meanaz1)  % Error-Azimuth-SoI
 E2AZ=abs(rad2deg(phisim2)-meanaz2)  % Error-Azimuth-Interferer
 E1ZE=abs(rad2deg(tetasim1)-meanze1) % Error-Zenith-SoI
